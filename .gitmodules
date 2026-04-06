@@ -1,0 +1,3 @@
+[submodule "nanoclaw"]
+	path = nanoclaw
+	url = https://github.com/qwibitai/nanoclaw.git

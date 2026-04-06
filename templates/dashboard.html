@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lumin Dashboard</title>
+  <link rel="icon" type="image/png" href="/assets/branding/lumin-mark-512.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#08140d; --card:#0d2118; --border:#1b3b2a; --text:#ebf5ee; --muted:#94b6a1; --green:#25d366; --deep:#0a6b58; --soft:rgba(37,211,102,.08); }
+    * { box-sizing:border-box; } body { margin:0; font-family:Inter,sans-serif; color:var(--text); background:radial-gradient(circle at top right, rgba(37,211,102,.12), transparent 25%), var(--bg); }
+    a { color:var(--green); text-decoration:none; } .hidden { display:none!important; }
+    .shell { max-width:1240px; margin:0 auto; padding:18px; display:grid; gap:14px; min-height:100vh; }
+    .topbar,.hero,.card,.auth { background:var(--card); border:1px solid var(--border); border-radius:22px; }
+    .topbar { padding:16px 20px; display:flex; align-items:center; justify-content:space-between; gap:14px; }
+    .brand { display:flex; align-items:center; gap:12px; font-weight:800; letter-spacing:.18em; } .brand img { width:28px; height:28px; display:block; }
+    .live { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:13px; } .dot { width:10px; height:10px; border-radius:999px; background:#53655c; } .dot.on { background:var(--green); box-shadow:0 0 0 0 rgba(37,211,102,.5); animation:pulse 1.8s infinite; }
+    @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(37,211,102,.45);} 70%{box-shadow:0 0 0 12px rgba(37,211,102,0);} 100%{box-shadow:0 0 0 0 rgba(37,211,102,0);} }
+    .hero { padding:18px 22px; background:linear-gradient(135deg, rgba(37,211,102,.12), rgba(10,107,88,.18)); } .eyebrow { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.18em; }
+    .headline { margin-top:8px; font-size:clamp(26px,4vw,40px); font-weight:800; line-height:1.08; } .headline .green { color:var(--green); }
+    .grid { display:grid; grid-template-columns:2fr 1fr; gap:14px; min-height:0; } .left,.right { display:grid; gap:14px; align-content:start; }
+    .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; } .card { padding:16px 18px; } .label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.14em; } .value { margin-top:10px; font-size:clamp(24px,3vw,34px); font-weight:800; } .sub { margin-top:6px; color:var(--muted); font-size:13px; }
+    .spark { height:130px; margin-top:10px; } svg { width:100%; height:100%; }
+    .feed,.chat-feed { display:grid; gap:10px; max-height:360px; overflow:auto; margin-top:10px; } .row,.bubble { border:1px solid rgba(255,255,255,.05); border-radius:16px; background:rgba(255,255,255,.03); padding:12px 14px; }
+    .row { display:grid; grid-template-columns:1.3fr .8fr .7fr auto; gap:10px; align-items:center; } .pill { display:inline-flex; align-items:center; justify-content:center; min-width:66px; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; background:var(--soft); color:var(--green); }
+    .mini { width:8px; height:8px; border-radius:999px; background:#627067; } .mini.on { background:var(--green); }
+    .meta { margin-top:4px; color:var(--muted); font-size:12px; } .rows { display:grid; gap:12px; margin-top:10px; } .line { display:flex; justify-content:space-between; gap:12px; color:var(--muted); font-size:14px; }
+    .bar { margin-top:8px; width:100%; height:10px; border-radius:999px; background:rgba(255,255,255,.05); overflow:hidden; } .bar span { display:block; height:100%; background:linear-gradient(90deg,var(--green),var(--deep)); }
+    .chat-feed { max-height:300px; } .bubble.user { margin-left:auto; max-width:88%; background:rgba(37,211,102,.14); border-color:rgba(37,211,102,.2); } .bubble.assistant { margin-right:auto; max-width:88%; }
+    .compose { display:grid; grid-template-columns:1fr auto; gap:10px; margin-top:10px; } textarea,input { width:100%; padding:12px 14px; border-radius:14px; border:1px solid var(--border); background:#08150d; color:var(--text); font:inherit; }
+    textarea { min-height:76px; resize:vertical; } button { border:0; border-radius:14px; cursor:pointer; font-weight:700; color:#05200f; background:linear-gradient(135deg,var(--green),var(--deep)); padding:12px 16px; }
+    .ghost { background:#08150d; color:var(--text); border:1px solid var(--border); } .auth { max-width:520px; margin:12vh auto 0; padding:20px; }
+    .status { min-height:18px; color:var(--muted); font-size:12px; margin-top:8px; } .typing { display:inline-flex; gap:4px; align-items:center; } .typing span { width:6px; height:6px; border-radius:999px; background:var(--green); opacity:.35; animation:blink 1.2s infinite ease-in-out; }
+    .typing span:nth-child(2){animation-delay:.15s;} .typing span:nth-child(3){animation-delay:.3s;} @keyframes blink { 0%,80%,100%{transform:translateY(0);opacity:.3;} 40%{transform:translateY(-2px);opacity:1;} }
+    @media (max-width:980px){ .grid{grid-template-columns:1fr;} .stats{grid-template-columns:repeat(2,1fr);} .row{grid-template-columns:1fr;} }
+    @media (max-width:640px){ .stats{grid-template-columns:1fr 1fr;} .topbar{flex-wrap:wrap;} }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="topbar">
+      <div class="brand"><img src="/assets/branding/lumin-mark.svg" alt="Lumin logo"><span>LUMIN</span></div>
+      <div style="display:flex;align-items:center;gap:14px;">
+        <a href="/settings">Settings</a>
+        <div class="live"><span id="liveDot" class="dot"></span><span id="liveLabel">POLLING</span></div>
+      </div>
+    </div>
+
+    <div id="auth" class="auth hidden">
+      <div class="label">Dashboard Key</div>
+      <div class="sub" style="margin-top:10px;">Pass <code>?key=...</code> in the URL or enter it here.</div>
+      <input id="keyInput" type="password" placeholder="LUMIN_DASHBOARD_KEY" style="margin-top:12px;">
+      <button id="unlock" style="margin-top:12px;width:100%;">Unlock Dashboard</button>
+    </div>
+
+    <div id="app" class="hidden">
+      <div class="hero">
+        <div class="eyebrow">Live Savings</div>
+        <div id="hero" class="headline">Would have spent <span>$0.00</span> → Spent <span class="green">$0.00</span></div>
+      </div>
+
+      <div class="grid">
+        <div class="left">
+          <div class="stats">
+            <div class="card"><div class="label">Saved</div><div id="saved" class="value">$0.00</div><div class="sub">today</div></div>
+            <div class="card"><div class="label">Requests</div><div id="requests" class="value">0</div><div class="sub">today</div></div>
+            <div class="card"><div class="label">Cache</div><div id="cache" class="value">0%</div><div class="sub">hit rate</div></div>
+            <div class="card"><div class="label">Avg Save</div><div id="avg" class="value">0%</div><div class="sub">weighted by spend</div></div>
+          </div>
+
+          <div class="card">
+            <div class="label">Spend Curve</div>
+            <div class="sub" style="margin-top:8px;">Would have spent <span id="would">$0.00</span> → Spent <span id="spent" style="color:var(--green);">$0.00</span></div>
+            <div class="spark"><svg viewBox="0 0 800 130" preserveAspectRatio="none"><path id="area" fill="rgba(37,211,102,.12)"></path><path id="path" fill="none" stroke="url(#g)" stroke-width="3.5" stroke-linecap="round"></path><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#25d366"></stop><stop offset="100%" stop-color="#0a6b58"></stop></linearGradient></defs></svg></div>
+          </div>
+
+          <div class="card">
+            <div class="label">Live Requests</div>
+            <div id="feed" class="feed"></div>
+          </div>
+        </div>
+
+        <div class="right">
+          <div class="card">
+            <div class="label">Model Routing</div>
+            <div id="routing" class="rows"></div>
+          </div>
+
+          <div class="card">
+            <div class="label">Budget</div>
+            <div class="rows">
+              <div><div class="line"><span>Daily</span><span id="dailyText">$0.00 / $0.00</span></div><div class="bar"><span id="dailyBar" style="width:0%"></span></div></div>
+              <div><div class="line"><span>Monthly</span><span id="monthlyText">$0.00 / $0.00</span></div><div class="bar"><span id="monthlyBar" style="width:0%"></span></div></div>
+              <div class="line"><span>Burn rate</span><span id="burn">$0.00/hr</span></div>
+              <div class="line"><span>Projected today</span><span id="projected">$0.00</span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="label">Chat</div>
+            <div class="sub" id="chatBanner" style="margin-top:10px;">Connect provider → chat → see savings.</div>
+            <div id="chatFeed" class="chat-feed"></div>
+            <div id="chatStatus" class="status"></div>
+            <div class="compose">
+              <textarea id="chatInput" placeholder="Ask Lumin something..."></textarea>
+              <button id="chatSend">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (s) => document.querySelector(s), state = { key: new URLSearchParams(location.search).get('key') || sessionStorage.getItem('lumin_dashboard_key') || '', ws: null, live: false, requests: [], chat: [], sending: false, contextId: 'dashboard-main' };
+    if (state.key) sessionStorage.setItem('lumin_dashboard_key', state.key);
+    const money = (v) => new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', minimumFractionDigits:2, maximumFractionDigits:4 }).format(Number(v || 0));
+    const pct = (v) => `${Number(v || 0).toFixed(1)}%`, num = (v) => new Intl.NumberFormat('en-US').format(Number(v || 0));
+    const setLive = (on) => { state.live = on; $('#liveDot').className = `dot${on ? ' on' : ''}`; $('#liveLabel').textContent = on ? 'LIVE' : 'POLLING'; };
+    const api = async (path, init = {}) => {
+      const res = await fetch(path, { ...init, headers: { 'Content-Type': 'application/json', ...(init.headers || {}), ...(state.key ? { 'X-Lumin-Key': state.key } : {}) } });
+      if (res.status === 403) throw new Error('auth'); if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`); return res.headers.get('content-type')?.includes('json') ? res.json() : res.text();
+    };
+    const row = (r) => `<div class="row"><div><strong>${r.model_used || r.model_routed || r.model || 'unknown'}</strong><div class="meta">${r.model_requested || r.model || ''}</div></div><div class="pill">${pct(r.savings_pct)}</div><div>${money(r.saved_dollars)}</div><div class="mini${r.cache_hit ? ' on' : ''}"></div></div>`;
+    const bubble = (role, text, meta = '') => `<div class="bubble ${role}">${String(text || '')}${meta ? `<div class="meta">${meta}</div>` : ''}</div>`;
+    const spark = () => {
+      const vals = (state.requests.slice(0, 18).reverse().map(r => Number(r.saved_dollars || 0))); const s = vals.length ? vals : [0,0,0], max = Math.max(...s, 1), step = s.length > 1 ? 800 / (s.length - 1) : 800;
+      const pts = s.map((v, i) => [i * step, 118 - ((v / max) * 92)]), line = pts.map(([x, y], i) => `${i ? 'L' : 'M'} ${x} ${y}`).join(' ');
+      $('#path').setAttribute('d', line); $('#area').setAttribute('d', `${line} L 800 130 L 0 130 Z`);
+    };
+    const renderFeed = () => { $('#feed').innerHTML = state.requests.slice(0, 10).map(row).join('') || `<div class="meta">No chat-completion requests yet.</div>`; spark(); };
+    const renderChat = () => { $('#chatFeed').innerHTML = state.chat.map(m => bubble(m.role, m.text, m.meta)).join(''); $('#chatFeed').scrollTop = $('#chatFeed').scrollHeight; };
+    const renderStats = (s) => {
+      $('#hero').innerHTML = `Would have spent <span>${money(s.would_have_spent_today || 0)}</span> → Spent <span class="green">${money(s.spent_today || 0)}</span>`;
+      $('#saved').textContent = money(s.saved_today); $('#requests').textContent = num(s.requests_today); $('#cache').textContent = pct((s.cache_hit_rate || 0) * 100); $('#avg').textContent = pct(s.today_weighted_savings_pct || s.weighted_savings_pct || 0);
+      $('#would').textContent = money(s.would_have_spent_today || 0); $('#spent').textContent = money(s.spent_today || 0);
+      $('#routing').innerHTML = [['Top model', s.top_model_used || 'none'], ['Optimized requests', num(s.compression_breakdown.free_tier_requests)], ['Cache hits', num(s.compression_breakdown.cache_hits)], ['Average savings', pct(s.avg_savings_pct || 0)], ['Weighted savings', pct(s.today_weighted_savings_pct || s.weighted_savings_pct || 0)]].map(([k, v]) => `<div class="line"><span>${k}</span><span style="color:var(--text)">${v}</span></div>`).join('');
+    };
+    const renderBudget = (b) => { $('#dailyText').textContent = `${money(b.daily_spent)} / ${money(b.daily_limit)}`; $('#monthlyText').textContent = `${money(b.monthly_spent)} / ${money(b.monthly_limit)}`; $('#dailyBar').style.width = `${Math.min((b.daily_pct_used || 0) * 100, 100)}%`; $('#monthlyBar').style.width = `${Math.min((b.monthly_pct_used || 0) * 100, 100)}%`; $('#burn').textContent = `${money(b.burn_rate_per_hour)}/hr`; $('#projected').textContent = money(b.projected_daily_total); };
+    const load = async () => {
+      try {
+        const [stats, requests, budget] = await Promise.all([api('/api/stats'), api('/api/requests?limit=20'), api('/api/budget')]);
+        state.requests = requests.filter((r, i, a) => a.findIndex(x => x.id === r.id) === i); renderStats(stats); renderBudget(budget); renderFeed();
+      } catch (e) { if (e.message === 'auth') auth(); else $('#chatStatus').textContent = 'Refresh failed.'; }
+    };
+    const connect = () => {
+      if (!state.key) return; if (state.ws) try { state.ws.close(); } catch (_) {}
+      const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/live?key=${encodeURIComponent(state.key)}`); state.ws = ws;
+      ws.onopen = () => setLive(true); ws.onclose = () => { setLive(false); setTimeout(connect, 3000); };
+      ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type === 'ping') return; if (m.type === 'request_complete') { state.requests = [m, ...state.requests.filter(r => r.id !== m.id)].slice(0, 20); renderFeed(); load(); } if (m.type === 'chat_typing') { $('#chatStatus').innerHTML = `<span class="typing"><span></span><span></span><span></span></span> ${m.agent || 'agent'} is typing...`; } };
+    };
+    const auth = (msg = '') => { $('#auth').classList.remove('hidden'); $('#app').classList.add('hidden'); if (msg) $('#keyInput').placeholder = msg; setLive(false); };
+    const unlock = async () => { state.key = $('#keyInput').value.trim(); if (!state.key) return; sessionStorage.setItem('lumin_dashboard_key', state.key); try { await load(); $('#auth').classList.add('hidden'); $('#app').classList.remove('hidden'); connect(); } catch (_) { sessionStorage.removeItem('lumin_dashboard_key'); state.key = ''; auth('Invalid dashboard key'); } };
+    const sendChat = async () => {
+      if (state.sending) return; const message = $('#chatInput').value.trim(); if (!message) return;
+      state.sending = true; $('#chatSend').disabled = true; state.chat.push({ role:'user', text:message }); state.chat.push({ role:'assistant', text:'Working...', meta:'waiting for response' }); renderChat(); $('#chatInput').value = ''; $('#chatStatus').textContent = 'Sending...';
+      try {
+        const data = await api('/api/chat', { method:'POST', body: JSON.stringify({ message, group_id:'main', context_id: state.contextId }) });
+        state.chat.pop(); state.chat.push({ role:'assistant', text:data.response, meta:`${data.agent} • ${data.model_used} • ${data.latency_ms}ms • saved ${pct(data.savings?.savings_pct || 0)}` }); $('#chatStatus').textContent = '';
+      } catch (e) {
+        state.chat.pop(); state.chat.push({ role:'assistant', text:'Chat failed.', meta:e.message === 'auth' ? 'invalid key' : 'request error' }); $('#chatStatus').textContent = 'Chat failed.';
+      }
+      state.sending = false; $('#chatSend').disabled = false; renderChat(); load();
+    };
+    $('#unlock').addEventListener('click', unlock); $('#keyInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') unlock(); }); $('#chatSend').addEventListener('click', sendChat); $('#chatInput').addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') sendChat(); });
+    if (state.key) { $('#app').classList.remove('hidden'); load().then(connect).catch(() => auth('Invalid dashboard key')); } else auth();
+    setInterval(() => { if (state.key) load(); }, 15000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Lumin logo">
+  <defs>
+    <linearGradient id="dropFill" x1="512" y1="104" x2="512" y2="930" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#32e06c"/>
+      <stop offset="0.48" stop-color="#14965b"/>
+      <stop offset="1" stop-color="#076a58"/>
+    </linearGradient>
+    <linearGradient id="leafLeft" x1="332" y1="284" x2="584" y2="838" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1fb95d"/>
+      <stop offset="1" stop-color="#0c5d4f"/>
+    </linearGradient>
+    <linearGradient id="leafCenter" x1="466" y1="208" x2="610" y2="844" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#28d364"/>
+      <stop offset="1" stop-color="#0d6b54"/>
+    </linearGradient>
+    <linearGradient id="leafRight" x1="610" y1="244" x2="736" y2="816" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#42ea6d"/>
+      <stop offset="1" stop-color="#15945b"/>
+    </linearGradient>
+  </defs>
+
+  <path d="M512 90c170 142 278 298 278 484 0 182-125 332-278 360-153-28-278-178-278-360C234 388 342 232 512 90Z" fill="url(#dropFill)"/>
+  <path d="M535 141c144 126 234 264 234 432 0 157-102 289-240 329 118-77 184-175 184-298 0-113-39-213-122-321-37-49-54-90-56-142Z" fill="#29cf63" opacity=".22"/>
+  <path d="M445 273c-112 96-162 187-162 290 0 90 34 171 95 235-39-75-42-142-11-201 29-56 82-104 147-154 59-46 92-103 96-184-46 7-92 10-165 14Z" fill="url(#leafLeft)"/>
+  <path d="M539 177c-36 52-51 101-47 155 5 72-21 132-72 193-63 76-84 151-67 245 11 63 43 123 93 173-12-71 7-140 59-214 49-71 106-117 149-186 50-80 55-176 16-309-33-19-67-36-131-57Z" fill="url(#leafCenter)"/>
+  <path d="M679 254c82 77 126 164 126 275 0 107-40 199-106 276 27-66 33-127 18-183-19-70-56-127-72-206-14-71-2-124 34-162Z" fill="url(#leafRight)" opacity=".88"/>
+  <path d="M511 90c170 142 278 298 278 484 0 182-125 332-278 360-153-28-278-178-278-360C233 388 341 232 511 90Z" fill="none" stroke="rgba(0,0,0,.12)" stroke-width="8"/>
+</svg>

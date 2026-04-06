@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lumin Settings</title>
+  <link rel="icon" type="image/png" href="/assets/branding/lumin-mark-512.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#08140d; --card:#0d2118; --border:#1b3b2a; --text:#ebf5ee; --muted:#94b6a1; --green:#25d366; --deep:#0a6b58; }
+    * { box-sizing:border-box; } body { margin:0; font-family:Inter,sans-serif; background:var(--bg); color:var(--text); }
+    .shell { max-width:980px; margin:0 auto; padding:18px; display:grid; gap:14px; min-height:100vh; }
+    .topbar,.card,.auth { background:var(--card); border:1px solid var(--border); border-radius:22px; }
+    .topbar { padding:16px 20px; display:flex; justify-content:space-between; align-items:center; gap:14px; }
+    .brand { display:flex; gap:12px; align-items:center; font-weight:800; letter-spacing:.18em; } .brand img { width:28px; height:28px; display:block; }
+    .auth,.card { padding:18px; } .label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.14em; } .sub { margin-top:8px; color:var(--muted); font-size:13px; line-height:1.55; }
+    .grid { display:grid; grid-template-columns:1.25fr .95fr; gap:14px; } .stack { display:grid; gap:14px; }
+    input,select { width:100%; padding:12px 14px; border-radius:14px; border:1px solid var(--border); background:#08150d; color:var(--text); font:inherit; }
+    button { border:0; border-radius:14px; cursor:pointer; font-weight:700; color:#05200f; background:linear-gradient(135deg,var(--green),var(--deep)); padding:12px 16px; }
+    .ghost { background:#08150d; color:var(--text); border:1px solid var(--border); } .status { min-height:18px; color:var(--muted); font-size:12px; margin-top:8px; }
+    .fields,.list,.rows { display:grid; gap:10px; margin-top:10px; } .rowline { display:flex; justify-content:space-between; gap:12px; color:var(--muted); font-size:14px; }
+    .tile { padding:12px 14px; border-radius:16px; border:1px solid rgba(255,255,255,.05); background:rgba(255,255,255,.03); }
+    .hidden { display:none!important; } code { color:var(--text); }
+    @media (max-width:880px){ .grid{grid-template-columns:1fr;} }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="topbar">
+      <div class="brand"><img src="/assets/branding/lumin-mark.svg" alt="Lumin logo"><span>LUMIN SETTINGS</span></div>
+      <a href="/dashboard" style="color:var(--green);text-decoration:none;">Back to Dashboard</a>
+    </div>
+
+    <div id="auth" class="auth hidden">
+      <div class="label">Dashboard Key</div>
+      <div class="sub">Enter the same admin key you use for the dashboard.</div>
+      <input id="keyInput" type="password" placeholder="LUMIN_DASHBOARD_KEY" style="margin-top:12px;">
+      <button id="unlock" style="margin-top:12px;width:100%;">Unlock Settings</button>
+    </div>
+
+    <div id="app" class="grid hidden">
+      <div class="stack">
+        <div class="card">
+          <div class="label">Providers</div>
+          <div class="sub">Configure one real provider and keep the rest empty until you need them.</div>
+          <div class="fields">
+            <select id="providerType"></select>
+            <input id="providerName" type="text" placeholder="Display name">
+            <div id="providerFields" class="fields"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+              <button id="saveProvider">Save Provider</button>
+              <button id="deleteProvider" class="ghost">Remove Provider</button>
+            </div>
+            <div id="providerStatus" class="status"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="label">Configured Providers</div>
+          <div id="providerList" class="list"></div>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="card">
+          <div class="label">Local Settings</div>
+          <div class="sub">These come from the current local environment. Provider keys are editable here; the rest are shown so setup stays simple and predictable.</div>
+          <div id="settingsInfo" class="rows"></div>
+        </div>
+
+        <div class="card">
+          <div class="label">Simple Setup Path</div>
+          <div class="tile">
+            <div class="sub" style="margin-top:0;">
+              1. Save one provider key here.<br>
+              2. Go back to the dashboard.<br>
+              3. Send a chat message.<br>
+              4. Confirm savings in the hero and live feed.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (s) => document.querySelector(s), state = { key: new URLSearchParams(location.search).get('key') || sessionStorage.getItem('lumin_dashboard_key') || '', providers: [], settings: null };
+    if (state.key) sessionStorage.setItem('lumin_dashboard_key', state.key);
+    const api = async (path, init = {}) => {
+      const res = await fetch(path, { ...init, headers: { 'Content-Type':'application/json', ...(init.headers || {}), ...(state.key ? { 'X-Lumin-Key': state.key } : {}) } });
+      if (res.status === 403) throw new Error('auth'); if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`); return res.headers.get('content-type')?.includes('json') ? res.json() : res.text();
+    };
+    const selected = () => state.providers.find((p) => p.provider_type === $('#providerType').value) || state.providers[0];
+    const renderFields = () => {
+      const p = selected(); if (!p) return; $('#providerName').value = p.display_name || p.name || ''; $('#providerFields').innerHTML = (p.fields || []).map((f) => `<input data-key="${f.key}" ${f.secret ? 'type="password"' : 'type="text"'} placeholder="${f.label}${f.placeholder ? ` • ${f.placeholder}` : ''}" value="${(p.config_values || {})[f.key] || ''}">`).join('');
+    };
+    const renderProviders = () => {
+      $('#providerType').innerHTML = state.providers.map((p) => `<option value="${p.provider_type}">${p.name}</option>`).join(''); renderFields();
+      $('#providerList').innerHTML = state.providers.filter((p) => p.status !== 'not_configured').map((p) => `<div class="tile"><strong>${p.display_name || p.name}</strong><div class="sub">${p.provider_type}</div></div>`).join('') || `<div class="sub">No providers configured yet.</div>`;
+    };
+    const renderSettings = () => {
+      const s = state.settings || {}; $('#settingsInfo').innerHTML = [
+        ['Daily budget', String(s.daily_budget ?? 'n/a')],
+        ['Monthly budget', String(s.monthly_budget ?? 'n/a')],
+        ['Compression tier', String(s.default_compression_tier ?? 'n/a')],
+        ['Dashboard key', 'managed by environment'],
+        ['NanoClaw path', 'managed by environment'],
+      ].map(([k, v]) => `<div class="rowline"><span>${k}</span><span><code>${v}</code></span></div>`).join('');
+    };
+    const load = async () => {
+      const [providers, settings] = await Promise.all([api('/api/settings/providers'), api('/api/advanced/settings')]);
+      state.providers = providers; state.settings = settings; renderProviders(); renderSettings();
+    };
+    const unlock = async () => {
+      state.key = $('#keyInput').value.trim(); if (!state.key) return; sessionStorage.setItem('lumin_dashboard_key', state.key);
+      try { await load(); $('#auth').classList.add('hidden'); $('#app').classList.remove('hidden'); } catch (_) { sessionStorage.removeItem('lumin_dashboard_key'); state.key = ''; $('#keyInput').value = ''; $('#keyInput').placeholder = 'Invalid dashboard key'; }
+    };
+    $('#unlock').addEventListener('click', unlock);
+    $('#providerType').addEventListener('change', renderFields);
+    $('#saveProvider').addEventListener('click', async () => {
+      const p = selected(); if (!p) return;
+      const config = Object.fromEntries(Array.from(document.querySelectorAll('#providerFields [data-key]')).map((el) => [el.dataset.key, el.value]).filter(([, v]) => String(v).trim()));
+      try { await api('/api/settings/providers', { method:'POST', body: JSON.stringify({ provider_type: p.provider_type, display_name: $('#providerName').value.trim(), config }) }); $('#providerStatus').textContent = 'Saved.'; await load(); $('#providerType').value = p.provider_type; renderFields(); } catch (e) { $('#providerStatus').textContent = e.message === 'auth' ? 'Auth failed.' : 'Save failed.'; }
+    });
+    $('#deleteProvider').addEventListener('click', async () => {
+      const p = selected(); if (!p) return;
+      try { await api(`/api/settings/providers/${encodeURIComponent(p.provider_type)}`, { method:'DELETE' }); $('#providerStatus').textContent = 'Removed.'; await load(); } catch (e) { $('#providerStatus').textContent = e.message === 'auth' ? 'Auth failed.' : 'Remove failed.'; }
+    });
+    if (state.key) load().then(() => { $('#app').classList.remove('hidden'); }).catch(() => $('#auth').classList.remove('hidden')); else $('#auth').classList.remove('hidden');
+  </script>
+</body>
+</html>
