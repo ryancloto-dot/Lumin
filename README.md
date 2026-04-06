@@ -20,7 +20,7 @@
 Tell your agent:
 
 ```text
-Install Lumin from github.com/ryanlumin/lumin.
+Install Lumin from github.com/ryancloto-dot/Lumin.
 Run bash setup.sh.
 If you want a preview first, run bash setup.sh --dry-run.
 Then point my agent at the local Lumin proxy.
@@ -37,7 +37,7 @@ OpenClaw note:
 ### Manual install
 
 ```bash
-git clone https://github.com/ryanlumin/lumin
+git clone https://github.com/ryancloto-dot/Lumin
 cd lumin
 ./setup.sh
 ```
