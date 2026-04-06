@@ -12,6 +12,7 @@ import httpx
 
 from config import FILLER_PHRASES, get_settings
 from engine.chunker import select_relevant_chunks
+from engine.toon_converter import ToonConverter
 from engine.tokenizer import calculate_cost, count_input_tokens
 from models.schemas import ChatMessage
 
@@ -51,6 +52,8 @@ class CompressResult:
     savings_cost: float
     compressed_messages: list[Any]
     verification_passed: bool
+    toon_conversions: int = 0
+    toon_tokens_saved: int = 0
     compression_breakdown: dict[str, Any] = field(default_factory=dict)
 
 
@@ -575,6 +578,7 @@ class BaseCompressor:
         """Compress messages and optionally verify meaning preservation."""
 
         result = self.compress(messages=messages, tier=tier, verify=verify, context_id=context_id)
+        result = self._apply_toon_conversion(result)
         if result.savings_tokens <= 0:
             return result
 
@@ -589,6 +593,8 @@ class BaseCompressor:
                 savings_cost=result.savings_cost,
                 compressed_messages=result.compressed_messages,
                 verification_passed=False,
+                toon_conversions=result.toon_conversions,
+                toon_tokens_saved=result.toon_tokens_saved,
                 compression_breakdown=breakdown,
             )
 
@@ -606,6 +612,8 @@ class BaseCompressor:
                 savings_cost=result.savings_cost,
                 compressed_messages=result.compressed_messages,
                 verification_passed=True,
+                toon_conversions=result.toon_conversions,
+                toon_tokens_saved=result.toon_tokens_saved,
                 compression_breakdown=breakdown,
             )
 
@@ -624,6 +632,57 @@ class BaseCompressor:
             savings_cost=0.0,
             compressed_messages=messages,
             verification_passed=False,
+            toon_conversions=result.toon_conversions,
+            toon_tokens_saved=result.toon_tokens_saved,
+            compression_breakdown=breakdown,
+        )
+
+    def _apply_toon_conversion(self, result: CompressResult) -> CompressResult:
+        """Apply optional TOON conversion after text compression and before send."""
+
+        converter = ToonConverter(self.model)
+        conversion = converter.convert_prompt(result.compressed_messages)
+        breakdown = dict(result.compression_breakdown)
+        breakdown["toon"] = {
+            "enabled": converter.enabled,
+            "conversions_made": conversion.conversions_made,
+            "tokens_saved": conversion.savings_tokens,
+        }
+        if conversion.conversions_made <= 0 or conversion.savings_tokens <= 0:
+            return CompressResult(
+                original_tokens=result.original_tokens,
+                compressed_tokens=result.compressed_tokens,
+                savings_tokens=result.savings_tokens,
+                savings_pct=result.savings_pct,
+                savings_cost=result.savings_cost,
+                compressed_messages=result.compressed_messages,
+                verification_passed=result.verification_passed,
+                toon_conversions=0,
+                toon_tokens_saved=0,
+                compression_breakdown=breakdown,
+            )
+
+        compressed_tokens = conversion.converted_tokens
+        savings_tokens = max(result.original_tokens - compressed_tokens, 0)
+        savings_pct = round((savings_tokens / result.original_tokens) * 100, 4) if result.original_tokens else 0.0
+        savings_cost = round(
+            max(
+                calculate_cost(self.model, result.original_tokens).total_cost
+                - calculate_cost(self.model, compressed_tokens).total_cost,
+                0.0,
+            ),
+            8,
+        )
+        return CompressResult(
+            original_tokens=result.original_tokens,
+            compressed_tokens=compressed_tokens,
+            savings_tokens=savings_tokens,
+            savings_pct=savings_pct,
+            savings_cost=savings_cost,
+            compressed_messages=conversion.converted_messages,
+            verification_passed=result.verification_passed,
+            toon_conversions=conversion.conversions_made,
+            toon_tokens_saved=conversion.savings_tokens,
             compression_breakdown=breakdown,
         )
 

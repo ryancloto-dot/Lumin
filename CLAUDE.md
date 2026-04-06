@@ -54,6 +54,7 @@ Not real providers today:
 
 Built and in code:
 - Free prompt compression
+- TOON conversion for profitable structured JSON arrays
 - NanoClaw context distillation
 - Intelligent chunking
 - Python transpilation
@@ -106,7 +107,7 @@ python3 -m compileall engine/ proxy/
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The repo currently has `75` Python unit tests discoverable under `tests/`.
+The repo currently has `88` Python unit tests discoverable under `tests/`.
 
 Important note:
 - some API tests are skipped if `fastapi` test dependencies are unavailable
@@ -125,6 +126,8 @@ Common env vars:
 - `LUMIN_DESKTOP_SECRET`
 - `LUMIN_NANOCLAW_ROOT`
 - `LUMIN_PROXY_URL`
+- `LUMIN_TOON_ENABLED`
+- `LUMIN_TOON_MIN_SAVINGS`
 
 Pricing exists for:
 - OpenAI GPT models

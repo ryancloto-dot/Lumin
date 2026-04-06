@@ -147,6 +147,9 @@ class Settings:
     context_distill_max_blocks_per_session: int
     context_distill_min_saved_tokens: int
     context_distill_min_saved_pct: float
+    toon_enabled: bool
+    toon_min_savings: int
+    toon_min_array_size: int
     static_context_prefix_chars: int
     static_context_min_tokens: int
     static_context_max_task_chars: int
@@ -202,6 +205,9 @@ def get_settings() -> Settings:
         context_distill_min_saved_pct=float(
             os.getenv("LUMIN_CONTEXT_DISTILL_MIN_SAVED_PCT", "3")
         ),
+        toon_enabled=os.getenv("LUMIN_TOON_ENABLED", "true").lower() == "true",
+        toon_min_savings=int(os.getenv("LUMIN_TOON_MIN_SAVINGS", "10")),
+        toon_min_array_size=int(os.getenv("LUMIN_TOON_MIN_ARRAY_SIZE", "3")),
         static_context_prefix_chars=int(
             os.getenv("LUMIN_STATIC_CONTEXT_PREFIX_CHARS", "1600")
         ),

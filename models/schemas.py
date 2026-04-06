@@ -122,6 +122,8 @@ class DashboardCompressionBreakdown(BaseModel):
     exact_cache_hits: int = 0
     semantic_cache_hits: int = 0
     verification_fallbacks: int = 0
+    toon_conversions: int = 0
+    toon_tokens_saved: int = 0
     avg_free_savings_pct: float
     avg_pro_savings_pct: float
 
@@ -224,6 +226,8 @@ class RequestEntry(BaseModel):
     freshness_score: float = 1.0
     pivot_detected: bool = False
     cache_guard_reason: str = ""
+    toon_conversions: int = 0
+    toon_tokens_saved: int = 0
 
 
 class SettingsResponse(BaseModel):

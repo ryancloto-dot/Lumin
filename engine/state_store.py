@@ -69,7 +69,9 @@ class StateStore:
                     context_id TEXT,
                     freshness_score REAL NOT NULL DEFAULT 1.0,
                     pivot_detected INTEGER NOT NULL DEFAULT 0,
-                    cache_guard_reason TEXT NOT NULL DEFAULT ''
+                    cache_guard_reason TEXT NOT NULL DEFAULT '',
+                    toon_conversions INTEGER NOT NULL DEFAULT 0,
+                    toon_tokens_saved INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS desktop_agents (
@@ -212,6 +214,14 @@ class StateStore:
                 connection.execute(
                     "ALTER TABLE request_entries ADD COLUMN cache_guard_reason TEXT NOT NULL DEFAULT ''"
                 )
+            if "toon_conversions" not in request_entry_columns:
+                connection.execute(
+                    "ALTER TABLE request_entries ADD COLUMN toon_conversions INTEGER NOT NULL DEFAULT 0"
+                )
+            if "toon_tokens_saved" not in request_entry_columns:
+                connection.execute(
+                    "ALTER TABLE request_entries ADD COLUMN toon_tokens_saved INTEGER NOT NULL DEFAULT 0"
+                )
 
     @staticmethod
     def _hash_token(token: str) -> str:
@@ -228,8 +238,9 @@ class StateStore:
                     savings_pct, saved_dollars, actual_cost, would_have_cost, compression_tier,
                     cache_hit, cache_type, cache_score, routing_reason, latency_ms,
                     verification_result, verification_fallback, workflow_genome, workflow_confidence,
-                    source, context_id, freshness_score, pivot_detected, cache_guard_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    source, context_id, freshness_score, pivot_detected, cache_guard_reason,
+                    toon_conversions, toon_tokens_saved
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     entry.id,
@@ -257,6 +268,8 @@ class StateStore:
                     entry.freshness_score,
                     1 if entry.pivot_detected else 0,
                     entry.cache_guard_reason,
+                    entry.toon_conversions,
+                    entry.toon_tokens_saved,
                 ),
             )
 
@@ -317,6 +330,8 @@ class StateStore:
                 freshness_score=float(row["freshness_score"]) if "freshness_score" in row.keys() else 1.0,
                 pivot_detected=bool(row["pivot_detected"]) if "pivot_detected" in row.keys() else False,
                 cache_guard_reason=str(row["cache_guard_reason"] or "") if "cache_guard_reason" in row.keys() else "",
+                toon_conversions=int(row["toon_conversions"]) if "toon_conversions" in row.keys() else 0,
+                toon_tokens_saved=int(row["toon_tokens_saved"]) if "toon_tokens_saved" in row.keys() else 0,
             )
             for row in rows
         ]

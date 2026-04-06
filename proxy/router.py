@@ -27,6 +27,7 @@ from engine.context_compressor import get_nanoclaw_context_compressor
 from engine.router import RoutingDecision, decide_route
 from engine.state_store import get_state_store
 from engine.tokenizer import calculate_cost, count_input_tokens, count_openai_tokens
+from engine.toon_converter import ToonConverter
 from engine.transpiler import (
     TranspileDecodeError,
     verify_python_block,
@@ -311,6 +312,33 @@ def _build_savings_snapshot(
     )
 
 
+def _convert_toon_response_payload(model: str, payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Convert any TOON content in assistant text back into JSON."""
+
+    converter = ToonConverter(model)
+    converted_blocks = 0
+    choices = payload.get("choices")
+    if not isinstance(choices, list):
+        return payload, converted_blocks
+
+    updated_payload = json.loads(json.dumps(payload))
+    updated_choices = updated_payload.get("choices") or []
+    for choice in updated_choices:
+        if not isinstance(choice, dict):
+            continue
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if not isinstance(content, str) or "[" not in content:
+            continue
+        converted = converter.convert_response(content)
+        if converted != content:
+            message["content"] = converted
+            converted_blocks += 1
+    return updated_payload, converted_blocks
+
+
 def _anthropic_blocks_to_text(content: Any) -> str:
     """Collapse Anthropic block content into plain text."""
 
@@ -424,6 +452,8 @@ def _record_request_event(
     freshness_score: float = 1.0,
     pivot_detected: bool = False,
     cache_guard_reason: str = "",
+    toon_conversions: int = 0,
+    toon_tokens_saved: int = 0,
 ) -> None:
     """Persist request history and push a live dashboard event."""
 
@@ -462,6 +492,8 @@ def _record_request_event(
         freshness_score=round(freshness_score, 6),
         pivot_detected=pivot_detected,
         cache_guard_reason=cache_guard_reason,
+        toon_conversions=int(toon_conversions),
+        toon_tokens_saved=int(toon_tokens_saved),
     )
     request_ledger.add(entry)
     if source != _PROXY_LOG_SOURCE:
@@ -1268,6 +1300,8 @@ async def _handle_chat_completion(
                     workflow_genome=workflow_genome.genome,
                     workflow_confidence=workflow_genome.confidence,
                     context_id=context_id,
+                    toon_conversions=int(getattr(compression, "toon_conversions", 0)),
+                    toon_tokens_saved=int(getattr(compression, "toon_tokens_saved", 0)),
                 )
 
         return StreamingResponse(
@@ -1331,6 +1365,8 @@ async def _handle_chat_completion(
             freshness_score=cache_match.freshness_score,
             pivot_detected=cache_match.pivot_detected,
             cache_guard_reason=cache_match.guard_reason,
+            toon_conversions=int(getattr(compression, "toon_conversions", 0)),
+            toon_tokens_saved=int(getattr(compression, "toon_tokens_saved", 0)),
         )
         return Response(
             content=json.dumps(cached.response),
@@ -1343,6 +1379,8 @@ async def _handle_chat_completion(
                 "X-Lumin-Cache-Type": "exact" if (cache_match.exact if cache_match else True) else "semantic",
                 "X-Lumin-Cache-Score": f"{(cache_match.score if cache_match else 1.0):.6f}",
                 "X-Lumin-Compression-Tier": tier,
+                "X-Lumin-TOON-Conversions": str(int(getattr(compression, "toon_conversions", 0))),
+                "X-Lumin-TOON-Tokens-Saved": str(int(getattr(compression, "toon_tokens_saved", 0))),
                 "X-Lumin-Verification": _verification_header_value(verify, compression.verification_passed),
                 "X-Lumin-Verification-Result": str(compression.compression_breakdown.get("verification_result", "skipped")),
                 "X-Lumin-Verification-Fallback": "true" if str(compression.compression_breakdown.get("fallback_reason", "")) == "verification_failed" else "false",
@@ -1365,6 +1403,7 @@ async def _handle_chat_completion(
         upstream_messages,
         provider_config,
     )
+    upstream_response, response_toon_conversions = _convert_toon_response_payload(effective_model, upstream_response)
     transpile_saved_amount = 0.0
     transpile_usage_penalty_prompt = 0
     transpile_usage_penalty_completion = 0
@@ -1442,6 +1481,7 @@ async def _handle_chat_completion(
                 "transpile_status": transpile_status,
                 "transpile_saved_amount": transpile_saved_amount,
                 "experiments": list(enabled_experiments),
+                "toon_response_conversions": response_toon_conversions,
             },
         )
     latency_ms = int((time.perf_counter() - started_at) * 1000)
@@ -1465,6 +1505,8 @@ async def _handle_chat_completion(
         freshness_score=(cache_decision.freshness_score if cache_decision is not None else 1.0),
         pivot_detected=(cache_decision.pivot_detected if cache_decision is not None else False),
         cache_guard_reason=(cache_decision.guard_reason if cache_decision is not None else ""),
+        toon_conversions=int(getattr(compression, "toon_conversions", 0)),
+        toon_tokens_saved=int(getattr(compression, "toon_tokens_saved", 0)),
     )
 
     logger.info(
@@ -1519,6 +1561,8 @@ async def _handle_chat_completion(
             "X-Lumin-Cache-Type": "miss",
             "X-Lumin-Cache-Score": "0.000000",
             "X-Lumin-Compression-Tier": tier,
+            "X-Lumin-TOON-Conversions": str(int(getattr(compression, "toon_conversions", 0))),
+            "X-Lumin-TOON-Tokens-Saved": str(int(getattr(compression, "toon_tokens_saved", 0))),
             "X-Lumin-Verification": _verification_header_value(verify, compression.verification_passed),
             "X-Lumin-Verification-Result": str(compression.compression_breakdown.get("verification_result", "skipped")),
             "X-Lumin-Verification-Fallback": "true" if str(compression.compression_breakdown.get("fallback_reason", "")) == "verification_failed" else "false",

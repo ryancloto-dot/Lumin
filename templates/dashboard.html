@@ -141,6 +141,8 @@
         ['Top model', s.top_model_used || 'none'],
         ['Optimized requests', num(s.compression_breakdown.free_tier_requests)],
         ['Cache hits', num(s.compression_breakdown.cache_hits)],
+        ['TOON conversions', num(s.compression_breakdown.toon_conversions || 0)],
+        ['TOON tokens saved', num(s.compression_breakdown.toon_tokens_saved || 0)],
         ['Average savings', pct(s.avg_savings_pct || 0)],
         ['Weighted savings', pct(s.today_weighted_savings_pct || s.weighted_savings_pct || 0)],
         ['Avg freshness', pct((q.avg_freshness_score || 0) * 100)],

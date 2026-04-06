@@ -1,0 +1,52 @@
+[
+  {
+    "id": "math_exact",
+    "description": "Short exact-answer control case.",
+    "model": "gpt-4o-mini",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Reply with exactly: 4"
+      }
+    ],
+    "assertion": {
+      "mode": "exact",
+      "value": "4"
+    }
+  },
+  {
+    "id": "capital_contains",
+    "description": "Simple factual response should mention the known answer.",
+    "model": "gpt-4o-mini",
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is the capital of France? Answer in one short sentence."
+      }
+    ],
+    "assertion": {
+      "mode": "contains",
+      "value": "Paris"
+    }
+  },
+  {
+    "id": "json_shape",
+    "description": "Structured response should preserve key names.",
+    "model": "gpt-4o-mini",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Return JSON only with keys status and result where status is ok and result is 4."
+      }
+    ],
+    "assertion": {
+      "mode": "all_contains",
+      "values": [
+        "\"status\"",
+        "\"result\"",
+        "ok",
+        "4"
+      ]
+    }
+  }
+]

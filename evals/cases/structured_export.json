@@ -1,0 +1,25 @@
+[
+  {
+    "id": "structured_export_summary",
+    "description": "Large uniform export shaped for TOON conversion.",
+    "model": "gpt-4o-mini",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You analyze customer export tables and summarize patterns concisely."
+      },
+      {
+        "role": "user",
+        "content": "Review this customer export and summarize role distribution, any suspicious duplicates, and any outliers in one short paragraph.\n[{\"id\": 1, \"full_name\": \"Alice Johnson\", \"account_role\": \"admin\", \"region\": \"NA\", \"status\": \"active\"}, {\"id\": 2, \"full_name\": \"Bob Smith\", \"account_role\": \"user\", \"region\": \"EU\", \"status\": \"active\"}, {\"id\": 3, \"full_name\": \"Carol Davis\", \"account_role\": \"editor\", \"region\": \"NA\", \"status\": \"active\"}, {\"id\": 4, \"full_name\": \"Dave Miller\", \"account_role\": \"user\", \"region\": \"APAC\", \"status\": \"suspended\"}, {\"id\": 5, \"full_name\": \"Erin Brown\", \"account_role\": \"user\", \"region\": \"NA\", \"status\": \"active\"}, {\"id\": 6, \"full_name\": \"Frank Moore\", \"account_role\": \"admin\", \"region\": \"EU\", \"status\": \"active\"}, {\"id\": 7, \"full_name\": \"Grace Wilson\", \"account_role\": \"user\", \"region\": \"NA\", \"status\": \"active\"}, {\"id\": 8, \"full_name\": \"Henry Taylor\", \"account_role\": \"editor\", \"region\": \"LATAM\", \"status\": \"active\"}, {\"id\": 9, \"full_name\": \"Ivy Anderson\", \"account_role\": \"user\", \"region\": \"EU\", \"status\": \"active\"}, {\"id\": 10, \"full_name\": \"Jack Thomas\", \"account_role\": \"user\", \"region\": \"NA\", \"status\": \"active\"}, {\"id\": 11, \"full_name\": \"Kelly Jackson\", \"account_role\": \"admin\", \"region\": \"APAC\", \"status\": \"active\"}, {\"id\": 12, \"full_name\": \"Liam White\", \"account_role\": \"user\", \"region\": \"NA\", \"status\": \"inactive\"}]"
+      }
+    ],
+    "assertion": {
+      "mode": "all_contains",
+      "values": [
+        "admin",
+        "user",
+        "suspended"
+      ]
+    }
+  }
+]

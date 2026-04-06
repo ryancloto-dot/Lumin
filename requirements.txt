@@ -9,3 +9,4 @@ sentence-transformers==5.3.0
 numpy==2.2.6
 scikit-learn==1.7.2
 websockets==16.0
+py-toon-format==0.1.0

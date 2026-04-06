@@ -705,6 +705,8 @@ class RequestLedger:
         exact_cache_hits = sum(1 for entry in entries if entry.cache_type == "exact")
         semantic_cache_hits = sum(1 for entry in entries if entry.cache_type == "semantic")
         verification_fallbacks = sum(1 for entry in entries if entry.verification_fallback)
+        toon_conversions = sum(int(entry.toon_conversions) for entry in entries)
+        toon_tokens_saved = sum(int(entry.toon_tokens_saved) for entry in entries)
         pivoted_requests = sum(1 for entry in entries if entry.pivot_detected)
         guarded_requests = sum(1 for entry in entries if entry.cache_guard_reason)
         stale_cache_blocks = sum(
@@ -751,6 +753,8 @@ class RequestLedger:
                 "exact_cache_hits": exact_cache_hits,
                 "semantic_cache_hits": semantic_cache_hits,
                 "verification_fallbacks": verification_fallbacks,
+                "toon_conversions": toon_conversions,
+                "toon_tokens_saved": toon_tokens_saved,
                 "avg_free_savings_pct": round(
                     (sum(entry.savings_pct for entry in optimized_entries) / len(optimized_entries))
                     if optimized_entries

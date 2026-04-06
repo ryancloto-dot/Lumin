@@ -2,7 +2,7 @@
 
 ![Lumin mark](assets/branding/lumin-mark.svg)
 
-![License](https://img.shields.io/badge/license-MIT-green) ![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![Tests](https://img.shields.io/badge/tests-75-green) ![Version](https://img.shields.io/badge/version-0.1.0-black)
+![License](https://img.shields.io/badge/license-MIT-green) ![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![Tests](https://img.shields.io/badge/tests-88-green) ![Version](https://img.shields.io/badge/version-0.1.0-black)
 
 > Cut your AI agent costs locally.  
 > One environment variable. No code changes.
@@ -10,6 +10,7 @@
 ## What it does
 
 - Runs an OpenAI-compatible proxy in front of your agent so prompts can be compressed, cached, and routed before they hit the model.
+- Detects profitable structured JSON arrays and can rewrite them into token-efficient TOON format before sending upstream.
 - Shows `Would have spent $X -> Spent $Y` live, with request history, budget tracking, and cache stats.
 - Works locally with real provider paths for OpenAI, Anthropic, Google Gemini, OpenRouter, and Ollama.
 
@@ -179,6 +180,7 @@ GOOGLE_API_KEY=
 OLLAMA_BASE_URL=http://localhost:11434
 
 LUMIN_COMPRESSION_TIER=free
+LUMIN_TOON_ENABLED=true
 LUMIN_DASHBOARD_KEY=lumin123
 LUMIN_DAILY_BUDGET=10.00
 LUMIN_MONTHLY_BUDGET=100.00
@@ -207,7 +209,7 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 
 Current repo status:
 
-- `75` Python unit tests discovered under `tests/`
+- `88` Python unit tests discovered under `tests/`
 - compression, cache, predictor, context compression, transpilation, proxy shim, and state-store coverage exist
 - full-suite runtime can still be slow depending on your machine and installed test deps
 
