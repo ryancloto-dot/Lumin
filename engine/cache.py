@@ -106,6 +106,9 @@ _SYNONYMS: dict[str, str] = {
     "classification": "label",
 }
 _ARTIFACT_RE = re.compile(r"(?:`([^`]+)`|\b([A-Za-z0-9_./-]+\.(?:py|ts|tsx|js|jsx|md|json|yaml|yml))\b)")
+_FRESHNESS_HINT_RE = re.compile(
+    r"\b(new|latest|updated|fresh|current|instead|different|another|changed|switch|swap|recent)\b",
+)
 
 
 def _stable_json(value: Any) -> str:
@@ -166,6 +169,27 @@ def _last_user_text_from_payload(payload: dict[str, Any]) -> str:
             return content.strip()
         return _stable_json(content)
     return ""
+
+
+def _previous_user_texts_from_payload(payload: dict[str, Any]) -> list[str]:
+    """Return prior user-authored texts before the final user message."""
+
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        return []
+
+    user_texts: list[str] = []
+    for message in messages:
+        if not isinstance(message, dict) or str(message.get("role", "")) != "user":
+            continue
+        content = message.get("content", "")
+        if isinstance(content, str):
+            text = content.strip()
+        else:
+            text = _stable_json(content)
+        if text:
+            user_texts.append(text)
+    return user_texts[:-1]
 
 
 def _artifact_targets(text: str) -> set[str]:
@@ -264,6 +288,44 @@ class SemanticCache:
         )
         self._entries.pop(oldest_key, None)
 
+    def _freshness_profile(
+        self,
+        request_payload: dict[str, Any],
+        *,
+        last_user_text: str,
+        last_user_terms: dict[str, float],
+        message_count: int,
+    ) -> tuple[float, bool, str]:
+        """Estimate whether the current conversation appears to have pivoted."""
+
+        if message_count < 3 or not last_user_text.strip():
+            return 1.0, False, ""
+
+        previous_user_texts = _previous_user_texts_from_payload(request_payload)
+        if not previous_user_texts:
+            return 1.0, False, ""
+
+        previous_targets = set().union(*(_artifact_targets(text) for text in previous_user_texts))
+        requested_targets = _artifact_targets(last_user_text)
+        if requested_targets and previous_targets and requested_targets.isdisjoint(previous_targets):
+            return 0.15, True, "artifact_pivot"
+
+        best_previous_score = 0.0
+        for previous_text in previous_user_texts[-3:]:
+            previous_terms = _term_weights(previous_text)
+            lexical = _cosine_similarity(last_user_terms, previous_terms)
+            stringish = SequenceMatcher(None, last_user_text, previous_text).ratio()
+            score = round((0.7 * lexical) + (0.3 * stringish), 6)
+            if score > best_previous_score:
+                best_previous_score = score
+
+        freshness_hint = bool(_FRESHNESS_HINT_RE.search(last_user_text.lower()))
+        if freshness_hint and best_previous_score < 0.78:
+            return round(best_previous_score, 6), True, "freshness_hint"
+        if best_previous_score < 0.34:
+            return round(best_previous_score, 6), True, "conversation_pivot"
+        return 1.0, False, ""
+
     def _score_entry(
         self,
         semantic_text: str,
@@ -271,6 +333,8 @@ class SemanticCache:
         last_user_text: str,
         last_user_terms: dict[str, float],
         message_count: int,
+        freshness_score: float,
+        pivot_detected: bool,
         entry: CacheEntry,
     ) -> float:
         """Return a blended semantic similarity score for a cached entry."""
@@ -294,8 +358,14 @@ class SemanticCache:
 
         if message_count >= 3 and last_user_score < 0.45:
             return 0.0
+        if pivot_detected:
+            same_artifact = bool(requested_targets and entry_targets and not requested_targets.isdisjoint(entry_targets))
+            if not same_artifact and last_user_score < 0.82:
+                return 0.0
 
         score = round((0.55 * lexical) + (0.15 * overlap) + (0.1 * stringish) + (0.2 * last_user_score), 6)
+        if pivot_detected:
+            score = round(score * max(freshness_score, 0.35), 6)
         if message_count <= 1:
             if last_user_score >= 0.7 and lexical >= 0.7:
                 return max(score, 0.93)
@@ -311,13 +381,13 @@ class SemanticCache:
             return max(score, 0.86 if last_user_score >= 0.65 else score)
         return score
 
-    def _lookup(
+    def _inspect(
         self,
         model: str,
         request_payload: dict[str, Any],
         increment_hits: bool,
-    ) -> CacheLookupResult | None:
-        """Return the best cache match for *request_payload* if any."""
+    ) -> CacheDecision:
+        """Return the best cache decision for *request_payload*."""
 
         fingerprint = _hash_payload({"model": model, "payload": request_payload})
         semantic_text = _semantic_text_from_payload(request_payload)
@@ -325,6 +395,12 @@ class SemanticCache:
         last_user_text = _last_user_text_from_payload(request_payload)
         last_user_terms = _term_weights(last_user_text)
         message_count = len(request_payload.get("messages", [])) if isinstance(request_payload.get("messages"), list) else 0
+        freshness_score, pivot_detected, guard_reason = self._freshness_profile(
+            request_payload,
+            last_user_text=last_user_text,
+            last_user_terms=last_user_terms,
+            message_count=message_count,
+        )
 
         with self._lock:
             self._lookups += 1
@@ -334,7 +410,19 @@ class SemanticCache:
                 self._exact_hits += 1
                 if increment_hits:
                     exact.hits += 1
-                return CacheLookupResult(entry=exact, score=1.0, exact=True)
+                return CacheDecision(
+                    match=CacheLookupResult(
+                        entry=exact,
+                        score=1.0,
+                        exact=True,
+                        freshness_score=1.0,
+                        pivot_detected=False,
+                        guard_reason="",
+                    ),
+                    freshness_score=1.0,
+                    pivot_detected=False,
+                    guard_reason="",
+                )
 
             best_entry: CacheEntry | None = None
             best_score = 0.0
@@ -347,6 +435,8 @@ class SemanticCache:
                     last_user_text,
                     last_user_terms,
                     message_count,
+                    freshness_score,
+                    pivot_detected,
                     entry,
                 )
                 if score > best_score:
@@ -354,29 +444,59 @@ class SemanticCache:
                     best_entry = entry
 
             if best_entry is None or best_score < self._threshold:
-                return None
+                return CacheDecision(
+                    match=None,
+                    freshness_score=round(freshness_score, 6),
+                    pivot_detected=pivot_detected,
+                    guard_reason=guard_reason,
+                    best_score=round(best_score, 6),
+                )
             self._hits += 1
             self._semantic_hits += 1
             if increment_hits:
                 best_entry.hits += 1
-            return CacheLookupResult(entry=best_entry, score=best_score, exact=False)
+            return CacheDecision(
+                match=CacheLookupResult(
+                    entry=best_entry,
+                    score=best_score,
+                    exact=False,
+                    freshness_score=round(freshness_score, 6),
+                    pivot_detected=pivot_detected,
+                    guard_reason=guard_reason,
+                ),
+                freshness_score=round(freshness_score, 6),
+                pivot_detected=pivot_detected,
+                guard_reason=guard_reason,
+                best_score=round(best_score, 6),
+            )
 
     def get(self, model: str, request_payload: dict[str, Any]) -> CacheEntry | None:
         """Return an exact or semantic cache match."""
 
-        match = self._lookup(model, request_payload, increment_hits=True)
-        return match.entry if match is not None else None
+        decision = self._inspect(model, request_payload, increment_hits=True)
+        return decision.match.entry if decision.match is not None else None
 
     def get_with_score(self, model: str, request_payload: dict[str, Any]) -> CacheLookupResult | None:
         """Return a cache hit along with its similarity score."""
 
-        return self._lookup(model, request_payload, increment_hits=True)
+        return self.inspect(model, request_payload, increment_hits=True).match
+
+    def inspect(
+        self,
+        model: str,
+        request_payload: dict[str, Any],
+        *,
+        increment_hits: bool = True,
+    ) -> CacheDecision:
+        """Return detailed cache decision metadata, even on misses."""
+
+        return self._inspect(model, request_payload, increment_hits=increment_hits)
 
     def estimate(self, model: str, request_payload: dict[str, Any]) -> dict[str, Any]:
         """Estimate the likelihood and value of a semantic cache hit."""
 
-        match = self._lookup(model, request_payload, increment_hits=False)
-        if match is None:
+        decision = self._inspect(model, request_payload, increment_hits=False)
+        if decision.match is None:
             return {
                 "hit_score": 0.0,
                 "hit_probability": 0.0,
@@ -384,13 +504,13 @@ class SemanticCache:
                 "matched_key": None,
             }
 
-        usage = match.entry.usage or {}
+        usage = decision.match.entry.usage or {}
         estimated_saved_cost = float(usage.get("saved_amount") or 0.0)
         return {
-            "hit_score": match.score,
-            "hit_probability": round(min(max(match.score, 0.0), 1.0), 6),
+            "hit_score": decision.match.score,
+            "hit_probability": round(min(max(decision.match.score, 0.0), 1.0), 6),
             "estimated_saved_cost": round(estimated_saved_cost, 8),
-            "matched_key": match.entry.key,
+            "matched_key": decision.match.entry.key,
         }
 
     def put(
@@ -585,6 +705,19 @@ class RequestLedger:
         exact_cache_hits = sum(1 for entry in entries if entry.cache_type == "exact")
         semantic_cache_hits = sum(1 for entry in entries if entry.cache_type == "semantic")
         verification_fallbacks = sum(1 for entry in entries if entry.verification_fallback)
+        pivoted_requests = sum(1 for entry in entries if entry.pivot_detected)
+        guarded_requests = sum(1 for entry in entries if entry.cache_guard_reason)
+        stale_cache_blocks = sum(
+            1
+            for entry in entries
+            if entry.cache_guard_reason and not entry.cache_hit
+        )
+        avg_freshness_score = round(
+            (sum(float(entry.freshness_score) for entry in entries) / total_requests)
+            if total_requests
+            else 1.0,
+            4,
+        )
         optimized_entries = [entry for entry in entries if entry.compression_tier == "free"]
         legacy_nonfree_entries = [entry for entry in entries if entry.compression_tier != "free"]
 
@@ -604,6 +737,13 @@ class RequestLedger:
             "spent_today": float(today_stats["spent_today"]),
             "would_have_spent_today": float(today_stats["would_have_spent_today"]),
             "top_model_used": top_model,
+            "quality_metrics": {
+                "avg_freshness_score": avg_freshness_score,
+                "pivoted_requests": pivoted_requests,
+                "pivot_rate_pct": round((pivoted_requests / total_requests) * 100, 4) if total_requests else 0.0,
+                "stale_cache_blocks": stale_cache_blocks,
+                "quality_guard_rate_pct": round((guarded_requests / total_requests) * 100, 4) if total_requests else 0.0,
+            },
             "compression_breakdown": {
                 "free_tier_requests": len(optimized_entries),
                 "pro_tier_requests": len(legacy_nonfree_entries),
@@ -756,10 +896,40 @@ class LiveEventBus:
 class CacheLookupResult:
     """A cache match and its score metadata."""
 
-    def __init__(self, entry: CacheEntry, score: float, exact: bool) -> None:
+    def __init__(
+        self,
+        entry: CacheEntry,
+        score: float,
+        exact: bool,
+        freshness_score: float = 1.0,
+        pivot_detected: bool = False,
+        guard_reason: str = "",
+    ) -> None:
         self.entry = entry
         self.score = score
         self.exact = exact
+        self.freshness_score = freshness_score
+        self.pivot_detected = pivot_detected
+        self.guard_reason = guard_reason
+
+
+class CacheDecision:
+    """Detailed outcome of one semantic cache lookup."""
+
+    def __init__(
+        self,
+        *,
+        match: CacheLookupResult | None,
+        freshness_score: float,
+        pivot_detected: bool,
+        guard_reason: str,
+        best_score: float = 0.0,
+    ) -> None:
+        self.match = match
+        self.freshness_score = freshness_score
+        self.pivot_detected = pivot_detected
+        self.guard_reason = guard_reason
+        self.best_score = best_score
 
 
 _SEMANTIC_CACHE: SemanticCache | None = None

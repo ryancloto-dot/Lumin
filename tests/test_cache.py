@@ -93,6 +93,36 @@ class SemanticCacheTests(unittest.TestCase):
         match = cache.get_with_score("gpt-4o", tests_payload)
         self.assertIsNone(match)
 
+    def test_conversation_pivot_blocks_stale_semantic_hit_for_new_data(self) -> None:
+        cache = SemanticCache()
+        cache.put(
+            "gpt-5.4-mini",
+            {
+                "model": "gpt-5.4-mini",
+                "messages": [
+                    {"role": "system", "content": "You analyze spreadsheets."},
+                    {"role": "user", "content": "Summarize the January support export."},
+                ],
+            },
+            response={"choices": [{"message": {"role": "assistant", "content": "January summary"}}]},
+            usage={"saved_amount": 0.002},
+        )
+
+        pivot_payload = {
+            "model": "gpt-5.4-mini",
+            "messages": [
+                {"role": "system", "content": "You analyze spreadsheets."},
+                {"role": "user", "content": "Summarize the January support export."},
+                {"role": "assistant", "content": "January summary"},
+                {"role": "user", "content": "Use the new Q2 spreadsheet instead and list refund anomalies."},
+            ],
+        }
+
+        decision = cache.inspect("gpt-5.4-mini", pivot_payload, increment_hits=False)
+        self.assertIsNone(decision.match)
+        self.assertTrue(decision.pivot_detected)
+        self.assertIn(decision.guard_reason, {"freshness_hint", "conversation_pivot"})
+
 
 if __name__ == "__main__":
     unittest.main()

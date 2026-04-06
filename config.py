@@ -203,13 +203,13 @@ def get_settings() -> Settings:
             os.getenv("LUMIN_CONTEXT_DISTILL_MIN_SAVED_PCT", "3")
         ),
         static_context_prefix_chars=int(
-            os.getenv("LUMIN_STATIC_CONTEXT_PREFIX_CHARS", "2000")
+            os.getenv("LUMIN_STATIC_CONTEXT_PREFIX_CHARS", "1600")
         ),
         static_context_min_tokens=int(
-            os.getenv("LUMIN_STATIC_CONTEXT_MIN_TOKENS", "1200")
+            os.getenv("LUMIN_STATIC_CONTEXT_MIN_TOKENS", "900")
         ),
         static_context_max_task_chars=int(
-            os.getenv("LUMIN_STATIC_CONTEXT_MAX_TASK_CHARS", "120")
+            os.getenv("LUMIN_STATIC_CONTEXT_MAX_TASK_CHARS", "180")
         ),
         experiments_enabled=os.getenv("LUMIN_ENABLE_EXPERIMENTS", "true").lower() == "true",
         allowed_experiments=tuple(

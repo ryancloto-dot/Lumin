@@ -126,6 +126,16 @@ class DashboardCompressionBreakdown(BaseModel):
     avg_pro_savings_pct: float
 
 
+class QualityMetrics(BaseModel):
+    """End-to-end quality protection signals derived from completed requests."""
+
+    avg_freshness_score: float
+    pivoted_requests: int
+    pivot_rate_pct: float
+    stale_cache_blocks: int
+    quality_guard_rate_pct: float
+
+
 class StatsResponse(BaseModel):
     """Exact dashboard stats payload returned by `/api/stats`."""
 
@@ -144,6 +154,7 @@ class StatsResponse(BaseModel):
     would_have_spent_today: float
     top_model_used: str
     compression_breakdown: DashboardCompressionBreakdown
+    quality_metrics: QualityMetrics
 
 
 class DashboardStats(BaseModel):
@@ -210,6 +221,9 @@ class RequestEntry(BaseModel):
     workflow_confidence: float = 0.0
     source: str = "proxy"
     context_id: str | None = None
+    freshness_score: float = 1.0
+    pivot_detected: bool = False
+    cache_guard_reason: str = ""
 
 
 class SettingsResponse(BaseModel):

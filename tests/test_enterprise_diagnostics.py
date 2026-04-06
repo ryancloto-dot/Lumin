@@ -65,9 +65,11 @@ class EnterpriseDiagnosticsTests(unittest.TestCase):
         self.assertIn("exact_cache_hits", breakdown)
         self.assertIn("semantic_cache_hits", breakdown)
         self.assertIn("verification_fallbacks", breakdown)
+        self.assertIn("quality_metrics", stats)
         self.assertEqual(stats["weighted_savings_pct"], 33.3333)
         self.assertEqual(breakdown["semantic_cache_hits"], 1)
         self.assertEqual(breakdown["verification_fallbacks"], 1)
+        self.assertEqual(stats["quality_metrics"]["avg_freshness_score"], 1.0)
 
     def test_api_settings_requires_key_and_returns_payload(self) -> None:
         if TestClient is None or app is None:

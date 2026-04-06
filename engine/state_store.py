@@ -66,7 +66,10 @@ class StateStore:
                     workflow_genome TEXT NOT NULL,
                     workflow_confidence REAL NOT NULL,
                     source TEXT NOT NULL DEFAULT 'proxy',
-                    context_id TEXT
+                    context_id TEXT,
+                    freshness_score REAL NOT NULL DEFAULT 1.0,
+                    pivot_detected INTEGER NOT NULL DEFAULT 0,
+                    cache_guard_reason TEXT NOT NULL DEFAULT ''
                 );
 
                 CREATE TABLE IF NOT EXISTS desktop_agents (
@@ -197,6 +200,18 @@ class StateStore:
                 connection.execute(
                     "ALTER TABLE request_entries ADD COLUMN context_id TEXT"
                 )
+            if "freshness_score" not in request_entry_columns:
+                connection.execute(
+                    "ALTER TABLE request_entries ADD COLUMN freshness_score REAL NOT NULL DEFAULT 1.0"
+                )
+            if "pivot_detected" not in request_entry_columns:
+                connection.execute(
+                    "ALTER TABLE request_entries ADD COLUMN pivot_detected INTEGER NOT NULL DEFAULT 0"
+                )
+            if "cache_guard_reason" not in request_entry_columns:
+                connection.execute(
+                    "ALTER TABLE request_entries ADD COLUMN cache_guard_reason TEXT NOT NULL DEFAULT ''"
+                )
 
     @staticmethod
     def _hash_token(token: str) -> str:
@@ -213,8 +228,8 @@ class StateStore:
                     savings_pct, saved_dollars, actual_cost, would_have_cost, compression_tier,
                     cache_hit, cache_type, cache_score, routing_reason, latency_ms,
                     verification_result, verification_fallback, workflow_genome, workflow_confidence,
-                    source, context_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    source, context_id, freshness_score, pivot_detected, cache_guard_reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     entry.id,
@@ -239,6 +254,9 @@ class StateStore:
                     entry.workflow_confidence,
                     entry.source,
                     entry.context_id,
+                    entry.freshness_score,
+                    1 if entry.pivot_detected else 0,
+                    entry.cache_guard_reason,
                 ),
             )
 
@@ -296,6 +314,9 @@ class StateStore:
                 workflow_confidence=float(row["workflow_confidence"]),
                 source=str(row["source"] or "proxy"),
                 context_id=str(row["context_id"]) if row["context_id"] is not None else None,
+                freshness_score=float(row["freshness_score"]) if "freshness_score" in row.keys() else 1.0,
+                pivot_detected=bool(row["pivot_detected"]) if "pivot_detected" in row.keys() else False,
+                cache_guard_reason=str(row["cache_guard_reason"] or "") if "cache_guard_reason" in row.keys() else "",
             )
             for row in rows
         ]

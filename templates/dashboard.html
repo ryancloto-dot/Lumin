@@ -136,7 +136,17 @@
       $('#hero').innerHTML = `Would have spent <span>${money(s.would_have_spent_today || 0)}</span> → Spent <span class="green">${money(s.spent_today || 0)}</span>`;
       $('#saved').textContent = money(s.saved_today); $('#requests').textContent = num(s.requests_today); $('#cache').textContent = pct((s.cache_hit_rate || 0) * 100); $('#avg').textContent = pct(s.today_weighted_savings_pct || s.weighted_savings_pct || 0);
       $('#would').textContent = money(s.would_have_spent_today || 0); $('#spent').textContent = money(s.spent_today || 0);
-      $('#routing').innerHTML = [['Top model', s.top_model_used || 'none'], ['Optimized requests', num(s.compression_breakdown.free_tier_requests)], ['Cache hits', num(s.compression_breakdown.cache_hits)], ['Average savings', pct(s.avg_savings_pct || 0)], ['Weighted savings', pct(s.today_weighted_savings_pct || s.weighted_savings_pct || 0)]].map(([k, v]) => `<div class="line"><span>${k}</span><span style="color:var(--text)">${v}</span></div>`).join('');
+      const q = s.quality_metrics || {};
+      $('#routing').innerHTML = [
+        ['Top model', s.top_model_used || 'none'],
+        ['Optimized requests', num(s.compression_breakdown.free_tier_requests)],
+        ['Cache hits', num(s.compression_breakdown.cache_hits)],
+        ['Average savings', pct(s.avg_savings_pct || 0)],
+        ['Weighted savings', pct(s.today_weighted_savings_pct || s.weighted_savings_pct || 0)],
+        ['Avg freshness', pct((q.avg_freshness_score || 0) * 100)],
+        ['Pivot detections', num(q.pivoted_requests || 0)],
+        ['Stale blocks', num(q.stale_cache_blocks || 0)],
+      ].map(([k, v]) => `<div class="line"><span>${k}</span><span style="color:var(--text)">${v}</span></div>`).join('');
     };
     const renderBudget = (b) => { $('#dailyText').textContent = `${money(b.daily_spent)} / ${money(b.daily_limit)}`; $('#monthlyText').textContent = `${money(b.monthly_spent)} / ${money(b.monthly_limit)}`; $('#dailyBar').style.width = `${Math.min((b.daily_pct_used || 0) * 100, 100)}%`; $('#monthlyBar').style.width = `${Math.min((b.monthly_pct_used || 0) * 100, 100)}%`; $('#burn').textContent = `${money(b.burn_rate_per_hour)}/hr`; $('#projected').textContent = money(b.projected_daily_total); };
     const load = async () => {

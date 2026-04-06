@@ -421,6 +421,9 @@ def _record_request_event(
     workflow_genome: str,
     workflow_confidence: float,
     context_id: str | None = None,
+    freshness_score: float = 1.0,
+    pivot_detected: bool = False,
+    cache_guard_reason: str = "",
 ) -> None:
     """Persist request history and push a live dashboard event."""
 
@@ -456,6 +459,9 @@ def _record_request_event(
         workflow_confidence=round(workflow_confidence, 4),
         source=source,
         context_id=context_id,
+        freshness_score=round(freshness_score, 6),
+        pivot_detected=pivot_detected,
+        cache_guard_reason=cache_guard_reason,
     )
     request_ledger.add(entry)
     if source != _PROXY_LOG_SOURCE:
@@ -1286,7 +1292,12 @@ async def _handle_chat_completion(
             },
         )
 
-    cache_match = None if disable_cache else semantic_cache.get_with_score(cache_model_key, outgoing_payload)
+    cache_decision = None if disable_cache else semantic_cache.inspect(
+        cache_model_key,
+        outgoing_payload,
+        increment_hits=True,
+    )
+    cache_match = cache_decision.match if cache_decision is not None else None
     cached = cache_match.entry if cache_match is not None else None
 
     if cached is not None:
@@ -1317,6 +1328,9 @@ async def _handle_chat_completion(
             workflow_genome=workflow_genome.genome,
             workflow_confidence=workflow_genome.confidence,
             context_id=context_id,
+            freshness_score=cache_match.freshness_score,
+            pivot_detected=cache_match.pivot_detected,
+            cache_guard_reason=cache_match.guard_reason,
         )
         return Response(
             content=json.dumps(cached.response),
@@ -1448,6 +1462,9 @@ async def _handle_chat_completion(
         workflow_genome=workflow_genome.genome,
         workflow_confidence=workflow_genome.confidence,
         context_id=context_id,
+        freshness_score=(cache_decision.freshness_score if cache_decision is not None else 1.0),
+        pivot_detected=(cache_decision.pivot_detected if cache_decision is not None else False),
+        cache_guard_reason=(cache_decision.guard_reason if cache_decision is not None else ""),
     )
 
     logger.info(
