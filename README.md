@@ -82,15 +82,30 @@ Your Agent
 
 ## Benchmarks
 
-Local savings vary a lot by workflow. The strongest wins today come from repeated context, cache hits, and route selection rather than one flat guaranteed percentage. The public repo no longer ships the private benchmark suite, so treat savings claims as workload-dependent.
+Local savings vary a lot by workflow. The strongest wins today come from repeated context, cache hits, and route selection rather than one flat guaranteed percentage.
+
+Current quick local compression pass on the public repo:
+
+- `agentic_debug`: `97.2%`
+- `code_review`: `32.0%`
+- `repeated_context_loop`: `94.7%`
+- `structured_export`: `62.7%` via formatting normalization + TOON on larger uniform JSON arrays
+  - `399` tokens saved from formatting normalization
+  - `141` tokens saved from TOON conversion
+- `rag_research`: `95.2%`
+- simple average across that pass: `76.4%`
+
+That benchmark is intentionally small and workload-shaped. The honest read is:
+
+- simple one-shot prompts still often have little to compress
+- repeated-context loops are where Lumin is currently strongest
+- you should treat benchmark numbers as workflow-dependent, not universal guarantees
 
 ## What you get
 
-### Free (open source, self-hosted)
-
 - Local self-hosted proxy
 - Cost Oracle at `/v1/predict`
-- Basic prompt compression
+- Prompt compression with verification, chunking, TOON conversion, and static-context pruning
 - Model routing
 - Savings dashboard
 - Works with OpenAI-compatible agents
@@ -179,7 +194,6 @@ ANTHROPIC_API_KEY=
 GOOGLE_API_KEY=
 OLLAMA_BASE_URL=http://localhost:11434
 
-LUMIN_COMPRESSION_TIER=free
 LUMIN_TOON_ENABLED=true
 LUMIN_DASHBOARD_KEY=lumin123
 LUMIN_DAILY_BUDGET=10.00
