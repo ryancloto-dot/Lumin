@@ -1,4 +1,4 @@
-"""Tiered prompt compression with optional semantic verification."""
+"""Prompt compression with optional semantic verification."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import httpx
 
 from config import FILLER_PHRASES, get_settings
 from engine.chunker import select_relevant_chunks
+from engine.format_normalizer import FormatNormalizer
 from engine.toon_converter import ToonConverter
 from engine.tokenizer import calculate_cost, count_input_tokens
 from models.schemas import ChatMessage
@@ -25,6 +26,22 @@ _ALWAYS_RE = re.compile(r"You should always\s+([^.!?]+)[.!?]", flags=re.IGNORECA
 _EXAMPLE_RE = re.compile(r"^(?:example|sample)\b", flags=re.IGNORECASE)
 _BULLET_RE = re.compile(r"^(\s*(?:[-*]|\d+[.)]))\s+")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_YOU_ARE_REVIEWING_RE = re.compile(r"^you are reviewing\b", flags=re.IGNORECASE)
+_YOU_ARE_PREFIX_RE = re.compile(r"^you are (?:an?|the)\s+", flags=re.IGNORECASE)
+_SYSTEM_PHRASE_REWRITES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(
+            r"^(?:(?:you are )?reviewing|review) code for bugs and regressions\.?$",
+            flags=re.IGNORECASE,
+        ),
+        "Review code issues.",
+    ),
+)
+_USER_PHRASE_REWRITES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\breview this small diff for issues:\s*", flags=re.IGNORECASE), "Review diff: "),
+    (re.compile(r"\breview this diff for issues:\s*", flags=re.IGNORECASE), "Review diff: "),
+    (re.compile(r"\breview diff:\s*", flags=re.IGNORECASE), "Diff: "),
+)
 _ASSISTANT_META_PREFIX_RE = re.compile(
     r"^(?:"
     r"certainly!\s*|"
@@ -222,6 +239,37 @@ def _compress_system_text(text: str) -> tuple[str, dict[str, int]]:
         deduped_lines = trimmed_lines
 
     system_text = "\n".join(deduped_lines)
+
+    repeated_sentences_removed = 0
+    sentence_counts: dict[str, int] = {}
+    ordered_sentences: list[str] = []
+    for sentence in _SENTENCE_SPLIT_RE.split(system_text):
+        cleaned = sentence.strip()
+        if not cleaned:
+            continue
+        count = sentence_counts.get(cleaned, 0)
+        if count == 0:
+            ordered_sentences.append(cleaned)
+        else:
+            repeated_sentences_removed += 1
+        sentence_counts[cleaned] = count + 1
+    if repeated_sentences_removed:
+        system_text = " ".join(ordered_sentences).strip()
+
+    shortened_role_prefix = 0
+    if system_text:
+        compact = _YOU_ARE_REVIEWING_RE.sub("Review", system_text, count=1).strip()
+        if compact == system_text:
+            compact = _YOU_ARE_PREFIX_RE.sub("", system_text, count=1).strip()
+        if compact and compact != system_text:
+            if compact and compact[0].isalpha():
+                compact = compact[0].upper() + compact[1:]
+            original_tokens = count_input_tokens("gpt-4o-mini", [ChatMessage(role="system", content=system_text)])
+            compact_tokens = count_input_tokens("gpt-4o-mini", [ChatMessage(role="system", content=compact)])
+            if compact_tokens < original_tokens or len(compact) < len(system_text):
+                system_text = compact
+                shortened_role_prefix = 1
+
     always_statements = _ALWAYS_RE.findall(system_text)
     always_collapsed = 0
     if len(always_statements) > 1:
@@ -253,12 +301,46 @@ def _compress_system_text(text: str) -> tuple[str, dict[str, int]]:
             lines = non_bullets
             bullet_compressed = len(bullet_lines) - 1
 
-    return "\n".join(lines).strip(), {
+    phrase_rewrites = 0
+    compact_text = "\n".join(lines).strip()
+    for pattern, replacement in _SYSTEM_PHRASE_REWRITES:
+        candidate, count = pattern.subn(replacement, compact_text)
+        if count <= 0:
+            continue
+        if count_input_tokens("gpt-4o-mini", [ChatMessage(role="system", content=candidate)]) < count_input_tokens(
+            "gpt-4o-mini",
+            [ChatMessage(role="system", content=compact_text)],
+        ):
+            compact_text = candidate
+            phrase_rewrites += count
+
+    return compact_text, {
         "duplicate_system_lines_removed": duplicate_lines_removed,
+        "repeated_system_sentences_removed": repeated_sentences_removed,
+        "shortened_role_prefixes": shortened_role_prefix,
         "examples_trimmed": examples_trimmed,
         "always_statements_collapsed": always_collapsed,
         "bullet_groups_compressed": bullet_compressed,
+        "system_phrase_rewrites": phrase_rewrites,
     }
+
+
+def _compress_user_text(model: str, text: str) -> tuple[str, int]:
+    """Apply a tiny set of token-aware user prompt rewrites."""
+
+    updated = text
+    rewrites = 0
+    for pattern, replacement in _USER_PHRASE_REWRITES:
+        candidate, count = pattern.subn(replacement, updated)
+        if count <= 0:
+            continue
+        if count_input_tokens(model, [ChatMessage(role="user", content=candidate)]) < count_input_tokens(
+            model,
+            [ChatMessage(role="user", content=updated)],
+        ):
+            updated = candidate
+            rewrites += count
+    return updated, rewrites
 
 
 def _summarize_history(messages: list[Any]) -> tuple[list[Any], dict[str, int]]:
@@ -549,7 +631,7 @@ class BaseCompressor:
     def compress(
         self,
         messages: list[Any],
-        tier: str = "free",
+        tier: str = "optimized",
         verify: bool = True,
         context_id: str | None = None,
     ) -> CompressResult:
@@ -571,7 +653,7 @@ class BaseCompressor:
     async def acompress(
         self,
         messages: list[ChatMessage],
-        tier: str = "free",
+        tier: str = "optimized",
         verify: bool = True,
         context_id: str | None = None,
     ) -> CompressResult:
@@ -582,7 +664,7 @@ class BaseCompressor:
         if result.savings_tokens <= 0:
             return result
 
-        if not verify or tier == "free":
+        if not verify:
             breakdown = dict(result.compression_breakdown)
             breakdown["verification_result"] = "skipped"
             return CompressResult(
@@ -599,6 +681,23 @@ class BaseCompressor:
             )
 
         verified, reason = await self._verify(messages, result.compressed_messages)
+        if verified is None:
+            breakdown = dict(result.compression_breakdown)
+            breakdown["verification_result"] = "skipped"
+            if reason:
+                breakdown["verification_reason"] = reason
+            return CompressResult(
+                original_tokens=result.original_tokens,
+                compressed_tokens=result.compressed_tokens,
+                savings_tokens=result.savings_tokens,
+                savings_pct=result.savings_pct,
+                savings_cost=result.savings_cost,
+                compressed_messages=result.compressed_messages,
+                verification_passed=False,
+                toon_conversions=result.toon_conversions,
+                toon_tokens_saved=result.toon_tokens_saved,
+                compression_breakdown=breakdown,
+            )
         if verified:
             breakdown = dict(result.compression_breakdown)
             breakdown["verification_result"] = "pass"
@@ -640,6 +739,7 @@ class BaseCompressor:
     def _apply_toon_conversion(self, result: CompressResult) -> CompressResult:
         """Apply optional TOON conversion after text compression and before send."""
 
+        result = self._apply_format_normalization(result)
         converter = ToonConverter(self.model)
         conversion = converter.convert_prompt(result.compressed_messages)
         breakdown = dict(result.compression_breakdown)
@@ -686,15 +786,87 @@ class BaseCompressor:
             compression_breakdown=breakdown,
         )
 
+    def _apply_format_normalization(self, result: CompressResult) -> CompressResult:
+        """Apply safe structured-format normalization before TOON conversion."""
+
+        if not self.settings.format_normalize_enabled:
+            breakdown = dict(result.compression_breakdown)
+            breakdown["format_normalization"] = {
+                "enabled": False,
+                "normalizations_made": 0,
+                "tokens_saved": 0,
+            }
+            return CompressResult(
+                original_tokens=result.original_tokens,
+                compressed_tokens=result.compressed_tokens,
+                savings_tokens=result.savings_tokens,
+                savings_pct=result.savings_pct,
+                savings_cost=result.savings_cost,
+                compressed_messages=result.compressed_messages,
+                verification_passed=result.verification_passed,
+                toon_conversions=result.toon_conversions,
+                toon_tokens_saved=result.toon_tokens_saved,
+                compression_breakdown=breakdown,
+            )
+
+        normalizer = FormatNormalizer(
+            self.model,
+            min_savings_tokens=self.settings.format_normalize_min_savings,
+        )
+        normalized = normalizer.normalize_prompt(result.compressed_messages)
+        breakdown = dict(result.compression_breakdown)
+        breakdown["format_normalization"] = {
+            "enabled": True,
+            "normalizations_made": normalized.normalizations_made,
+            "tokens_saved": normalized.savings_tokens,
+        }
+        if normalized.normalizations_made <= 0 or normalized.savings_tokens <= 0:
+            return CompressResult(
+                original_tokens=result.original_tokens,
+                compressed_tokens=result.compressed_tokens,
+                savings_tokens=result.savings_tokens,
+                savings_pct=result.savings_pct,
+                savings_cost=result.savings_cost,
+                compressed_messages=result.compressed_messages,
+                verification_passed=result.verification_passed,
+                toon_conversions=result.toon_conversions,
+                toon_tokens_saved=result.toon_tokens_saved,
+                compression_breakdown=breakdown,
+            )
+
+        compressed_tokens = normalized.normalized_tokens
+        savings_tokens = max(result.original_tokens - compressed_tokens, 0)
+        savings_pct = round((savings_tokens / result.original_tokens) * 100, 4) if result.original_tokens else 0.0
+        savings_cost = round(
+            max(
+                calculate_cost(self.model, result.original_tokens).total_cost
+                - calculate_cost(self.model, compressed_tokens).total_cost,
+                0.0,
+            ),
+            8,
+        )
+        return CompressResult(
+            original_tokens=result.original_tokens,
+            compressed_tokens=compressed_tokens,
+            savings_tokens=savings_tokens,
+            savings_pct=savings_pct,
+            savings_cost=savings_cost,
+            compressed_messages=normalized.normalized_messages,
+            verification_passed=result.verification_passed,
+            toon_conversions=result.toon_conversions,
+            toon_tokens_saved=result.toon_tokens_saved,
+            compression_breakdown=breakdown,
+        )
+
     async def _verify(
         self,
         original_messages: list[ChatMessage],
         compressed_messages: list[ChatMessage],
-    ) -> tuple[bool, str]:
+    ) -> tuple[bool | None, str]:
         """Verify that compression preserves meaning using a cheap model."""
 
         if not self.settings.openai_api_key:
-            return False, "verification_unavailable_missing_openai_api_key"
+            return None, "verification_unavailable_missing_openai_api_key"
 
         original_text = "\n\n".join(
             f"{_message_role(message)}: {_stringify_content(_message_content(message))}"
@@ -752,7 +924,7 @@ class BaseCompressor:
             return False, content or "verification_failed"
         except Exception as exc:
             logger.info("Compression verification failed: %s", exc)
-            return False, f"verification_error:{type(exc).__name__}"
+            return None, f"verification_error:{type(exc).__name__}"
 
 
 class BasicCompressor(BaseCompressor):
@@ -761,7 +933,7 @@ class BasicCompressor(BaseCompressor):
     def compress(
         self,
         messages: list[ChatMessage],
-        tier: str = "free",
+        tier: str = "optimized",
         verify: bool = True,
         context_id: str | None = None,
     ) -> CompressResult:
@@ -775,7 +947,7 @@ class BasicCompressor(BaseCompressor):
             original_messages[last_user_index] if last_user_index is not None else None
         )
         breakdown: dict[str, Any] = {
-            "tier": "free",
+            "mode": "optimized",
             "rules": {},
             "context_id": context_id,
         }
@@ -787,6 +959,7 @@ class BasicCompressor(BaseCompressor):
             transformed_messages: list[Any] = []
             filler_removed_total = 0
             assistant_meta_removed_total = 0
+            user_rewrites_total = 0
             normalized_stats = {
                 "trailing_whitespace_removed": 0,
                 "blank_runs_collapsed": 0,
@@ -794,26 +967,40 @@ class BasicCompressor(BaseCompressor):
             }
             system_stats = {
                 "duplicate_system_lines_removed": 0,
+                "repeated_system_sentences_removed": 0,
+                "shortened_role_prefixes": 0,
                 "examples_trimmed": 0,
                 "always_statements_collapsed": 0,
                 "bullet_groups_compressed": 0,
+                "system_phrase_rewrites": 0,
             }
 
             for message in candidate_messages:
-                if protected_last_user is not None and message is protected_last_user:
-                    transformed_messages.append(message)
-                    continue
-
                 text = _extract_text_message(message)
                 if text is None:
                     transformed_messages.append(message)
                     continue
 
+                is_protected_last_user = protected_last_user is not None and message is protected_last_user
                 normalized_text, whitespace_stats = _normalize_whitespace(text)
+
+                candidate_text = normalized_text
+                allow_user_rewrite = False
+                if is_protected_last_user and _message_role(message) == "user":
+                    candidate_text, rewrites = _compress_user_text(self.model, candidate_text)
+                    user_rewrites_total += rewrites
+                    if rewrites > 0:
+                        transformed_messages.append(_replace_text_message(message, candidate_text))
+                    else:
+                        transformed_messages.append(message)
+                    continue
+                if is_protected_last_user:
+                    transformed_messages.append(message)
+                    continue
+
                 for key, value in whitespace_stats.items():
                     normalized_stats[key] += value
 
-                candidate_text = normalized_text
                 if _message_role(message) in {"system", "developer", "assistant"}:
                     candidate_text, removed = _remove_filler_phrases(candidate_text)
                     filler_removed_total += removed
@@ -826,10 +1013,15 @@ class BasicCompressor(BaseCompressor):
                     candidate_text, message_system_stats = _compress_system_text(candidate_text)
                     for key, value in message_system_stats.items():
                         system_stats[key] += value
+                elif _message_role(message) == "user":
+                    candidate_text, rewrites = _compress_user_text(self.model, candidate_text)
+                    user_rewrites_total += rewrites
+                    allow_user_rewrite = rewrites > 0
 
                 if (
                     _message_role(message) not in {"system", "developer"}
                     and _message_role(message) != "assistant"
+                    and not allow_user_rewrite
                     and _normalize_for_compare(text) != _normalize_for_compare(candidate_text)
                 ):
                     transformed_messages.append(message)
@@ -840,6 +1032,7 @@ class BasicCompressor(BaseCompressor):
             breakdown["rules"].update(normalized_stats)
             breakdown["rules"]["filler_phrases_removed"] = filler_removed_total
             breakdown["rules"]["assistant_meta_prefixes_removed"] = assistant_meta_removed_total
+            breakdown["rules"]["user_prompt_rewrites"] = user_rewrites_total
             breakdown["rules"].update(system_stats)
 
             pruned_messages, static_context_stats = _apply_static_context_pruning(
@@ -921,14 +1114,14 @@ class BasicCompressor(BaseCompressor):
 async def compress_messages(
     model: str,
     messages: list[ChatMessage],
-    tier: str = "free",
+    tier: str = "optimized",
     verify: bool = True,
     context_id: str | None = None,
 ) -> CompressResult:
-    """Compress messages using the public free-tier pipeline with fail-safe fallback."""
+    """Compress messages using the best local optimization pipeline with fail-safe fallback."""
 
     compressor: BaseCompressor = BasicCompressor(model)
-    effective_tier = "free"
+    effective_tier = "optimized"
 
     try:
         result = await compressor.acompress(

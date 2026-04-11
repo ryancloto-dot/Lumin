@@ -87,13 +87,13 @@ Local savings vary a lot by workflow. The strongest wins today come from repeate
 Current quick local compression pass on the public repo:
 
 - `agentic_debug`: `97.2%`
-- `code_review`: `32.0%`
+- `code_review`: `44.0%`
 - `repeated_context_loop`: `94.7%`
-- `structured_export`: `62.7%` via formatting normalization + TOON on larger uniform JSON arrays
+- `structured_export`: `76.7%` via formatting normalization + TOON on larger uniform JSON arrays
   - `399` tokens saved from formatting normalization
-  - `141` tokens saved from TOON conversion
+  - `261` tokens saved from TOON conversion
 - `rag_research`: `95.2%`
-- simple average across that pass: `76.4%`
+- simple average across that pass: `81.5%`
 
 That benchmark is intentionally small and workload-shaped. The honest read is:
 

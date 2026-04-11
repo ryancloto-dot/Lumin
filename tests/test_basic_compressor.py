@@ -1,17 +1,20 @@
-"""Regression tests for the free-tier basic compressor."""
+"""Regression tests for the local optimized compressor."""
 
 from __future__ import annotations
 
 import unittest
+import asyncio
+
+from unittest.mock import patch
 
 from engine.compressor import BasicCompressor
 from models.schemas import ChatMessage
 
 
 class BasicCompressorTests(unittest.TestCase):
-    """Exercise conservative free-tier history and chunk compaction."""
+    """Exercise conservative history and chunk compaction."""
 
-    def test_free_compacts_repetitive_assistant_history(self) -> None:
+    def test_compacts_repetitive_assistant_history(self) -> None:
         messages = [
             ChatMessage(
                 role="system",
@@ -51,7 +54,7 @@ class BasicCompressorTests(unittest.TestCase):
             "Continue and keep the patch tiny.",
         )
 
-    def test_free_compacts_large_older_context(self) -> None:
+    def test_compacts_large_older_context(self) -> None:
         large_context = "\n\n".join(
             f"Section {index}: This subsystem handles message routing, retries, file access, "
             f"background workers, and dashboard telemetry for the agent platform."
@@ -77,7 +80,7 @@ class BasicCompressorTests(unittest.TestCase):
         )
         self.assertLess(result.compressed_tokens, result.original_tokens)
 
-    def test_free_prunes_large_static_system_tail_for_short_task(self) -> None:
+    def test_prunes_large_static_system_tail_for_short_task(self) -> None:
         static_prefix = (
             "You are the local OpenClaw agent. Keep the user safe, follow the workspace "
             "instructions, avoid unnecessary changes, and prefer concise direct answers.\n\n"
@@ -107,8 +110,57 @@ class BasicCompressorTests(unittest.TestCase):
             0,
         )
         self.assertTrue(
-            result.compressed_messages[0].content.startswith(static_prefix[:120])
+            result.compressed_messages[0].content.startswith("Local OpenClaw agent.")
         )
+
+    def test_dedupes_repeated_system_sentences(self) -> None:
+        messages = [
+            ChatMessage(
+                role="system",
+                content="You are a research assistant. Use only the provided context. Use only the provided context. Use only the provided context.",
+            ),
+            ChatMessage(role="user", content="Summarize the main findings."),
+        ]
+
+        result = BasicCompressor("gpt-4o-mini").compress(messages)
+
+        self.assertLess(result.compressed_tokens, result.original_tokens)
+        self.assertGreater(
+            result.compression_breakdown["rules"]["repeated_system_sentences_removed"],
+            0,
+        )
+
+    def test_verification_error_keeps_compressed_result(self) -> None:
+        messages = [
+            ChatMessage(
+                role="system",
+                content="You are a research assistant. Use only the provided context. Use only the provided context. Use only the provided context.",
+            ),
+            ChatMessage(role="user", content="Summarize the main findings."),
+        ]
+        compressor = BasicCompressor("gpt-4o-mini")
+
+        async def run() -> None:
+            with patch.object(BasicCompressor, "_verify", return_value=(None, "verification_error:HTTPStatusError")):
+                result = await compressor.acompress(messages, tier="optimized", verify=True, context_id="verify-test")
+            self.assertLess(result.compressed_tokens, result.original_tokens)
+            self.assertEqual(result.compression_breakdown["verification_result"], "skipped")
+
+        asyncio.run(run())
+
+    def test_compresses_active_code_review_prompt(self) -> None:
+        messages = [
+            ChatMessage(role="system", content="You are reviewing code for bugs and regressions."),
+            ChatMessage(role="user", content="Review this small diff for issues: + return 4"),
+        ]
+
+        result = BasicCompressor("gpt-4o-mini").compress(messages)
+
+        self.assertLess(result.compressed_tokens, result.original_tokens)
+        self.assertGreaterEqual(result.compression_breakdown["rules"]["system_phrase_rewrites"], 1)
+        self.assertGreaterEqual(result.compression_breakdown["rules"]["user_prompt_rewrites"], 1)
+        self.assertEqual(result.compressed_messages[0].content, "Review code issues.")
+        self.assertEqual(result.compressed_messages[1].content, "Diff: + return 4")
 
 
 if __name__ == "__main__":

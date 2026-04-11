@@ -19,6 +19,7 @@ except Exception:  # pragma: no cover - optional dependency
 
 _TOON_PREFIX = "TOON:\n"
 _TOON_HEADER_RE = re.compile(r"^\[(\d+)\]\{(.+)\}:$")
+_SAFE_HEADER_STRING_RE = re.compile(r"^[A-Za-z0-9_./-]+$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,13 +258,23 @@ class ToonConverter:
     def _convert_array(self, json_array: list[dict[str, Any]]) -> str:
         """Convert one uniform JSON object array into TOON text."""
 
+        candidates: list[str] = []
         try:
             external = self._convert_with_library(json_array)
             if external:
-                return external
+                candidates.append(external)
         except Exception:
             pass
-        return self._convert_array_manually(json_array)
+        candidates.append(self._convert_array_manually(json_array))
+        if len(candidates) == 1:
+            return candidates[0]
+        return min(
+            candidates,
+            key=lambda rendered: count_input_tokens(
+                self.model,
+                [ChatMessage(role="user", content=f"{_TOON_PREFIX}{rendered}")],
+            ),
+        )
 
     def _convert_with_library(self, json_array: list[dict[str, Any]]) -> str | None:
         if _TOON_LIB is None:
@@ -278,12 +289,35 @@ class ToonConverter:
 
     def _convert_array_manually(self, json_array: list[dict[str, Any]]) -> str:
         keys = list(json_array[0].keys())
-        header = f"[{len(json_array)}]{{{','.join(keys)}}}:"
+        constant_fields: dict[str, Any] = {}
+        variable_keys: list[str] = []
+        for key in keys:
+            first_value = json_array[0][key]
+            if all(item[key] == first_value for item in json_array) and self._header_constant_supported(first_value):
+                constant_fields[key] = first_value
+            else:
+                variable_keys.append(key)
+
+        header_parts = list(variable_keys)
+        for key, value in constant_fields.items():
+            header_parts.append(f"{key}={self._encode_header_constant(value)}")
+
+        header = f"[{len(json_array)}]{{{','.join(header_parts)}}}:"
         rows = []
         for item in json_array:
-            row_values = [item[key] for key in keys]
-            rows.append(f"  {_safe_json_dumps(row_values)}")
+            row_values = [item[key] for key in variable_keys]
+            rows.append(_safe_json_dumps(row_values))
         return "\n".join([header, *rows])
+
+    def _header_constant_supported(self, value: Any) -> bool:
+        if value is None or isinstance(value, (bool, int, float)):
+            return True
+        return isinstance(value, str) and bool(_SAFE_HEADER_STRING_RE.fullmatch(value))
+
+    def _encode_header_constant(self, value: Any) -> str:
+        if isinstance(value, str) and _SAFE_HEADER_STRING_RE.fullmatch(value):
+            return value
+        return _safe_json_dumps(value)
 
     def _decode_toon_block(self, block: str) -> Any | None:
         lines = [line.rstrip() for line in block.strip().splitlines() if line.strip()]
@@ -293,9 +327,25 @@ class ToonConverter:
         if header_match is None:
             return None
         row_count = int(header_match.group(1))
-        keys = [part.strip() for part in header_match.group(2).split(",") if part.strip()]
+        raw_parts = [part.strip() for part in header_match.group(2).split(",") if part.strip()]
+        keys: list[str] = []
+        constant_fields: dict[str, Any] = {}
+        for part in raw_parts:
+            if "=" in part:
+                key, raw_value = part.split("=", 1)
+                key = key.strip()
+                raw_value = raw_value.strip()
+                if not key:
+                    return None
+                try:
+                    value: Any = json.loads(raw_value)
+                except json.JSONDecodeError:
+                    value = raw_value
+                constant_fields[key] = value
+            else:
+                keys.append(part)
         row_lines = lines[1:]
-        if len(row_lines) != row_count or not keys:
+        if len(row_lines) != row_count or (not keys and not constant_fields):
             return None
 
         decoded_rows: list[dict[str, Any]] = []
@@ -312,7 +362,9 @@ class ToonConverter:
             if not isinstance(values, list) or len(values) != len(keys):
                 decoded_rows = None
                 break
-            decoded_rows.append({key: value for key, value in zip(keys, values)})
+            row = {key: value for key, value in zip(keys, values)}
+            row.update(constant_fields)
+            decoded_rows.append(row)
         if decoded_rows is not None and len(decoded_rows) == row_count:
             return decoded_rows
 
